@@ -140,54 +140,6 @@ class ChunkService {
   }
 
   /**
-   * 清理过期分片（可选功能）
-   * @param {number} maxAge 最大保存时间（毫秒）
-   */
-  async cleanupExpiredChunks(maxAge = 7 * 24 * 60 * 60 * 1000) { // 默认7天
-    const now = Date.now();
-    const cleanupResults = {
-      scanned: 0,
-      deleted: 0,
-      errors: 0
-    };
-
-    try {
-      const walkDir = async (dir) => {
-        const items = await fs.readdir(dir);
-        
-        for (const item of items) {
-          const itemPath = path.join(dir, item);
-          const stats = await fs.stat(itemPath);
-          
-          if (stats.isDirectory()) {
-            await walkDir(itemPath);
-          } else if (item.endsWith('.chunk')) {
-            cleanupResults.scanned++;
-            
-            if (now - stats.mtime.getTime() > maxAge) {
-              try {
-                await fs.unlink(itemPath);
-                cleanupResults.deleted++;
-                console.log(`已删除过期分片: ${item}`);
-              } catch (error) {
-                cleanupResults.errors++;
-                console.error(`删除分片失败: ${item}`, error);
-              }
-            }
-          }
-        }
-      };
-
-      await walkDir(this.chunksDir);
-      
-    } catch (error) {
-      console.error('清理分片时发生错误:', error);
-    }
-
-    return cleanupResults;
-  }
-
-  /**
    * 获取分片存储统计信息
    * @returns {Promise<Object>} 统计信息
    */

@@ -1,6 +1,7 @@
 import { ChunkSplitor } from './ChunkSplitor';
+import { SingleThreadSplitor } from './SingleThreadSplitor';
 import { EventEmitter } from './EventEmitter';
-import { type Chunk, calcChunkHash } from './Chunk';
+import { type Chunk } from './Chunk';
 
 /**
  * 多线程分片处理器
@@ -9,6 +10,7 @@ import { type Chunk, calcChunkHash } from './Chunk';
 export class MultiThreadSplitor extends ChunkSplitor {
   private workers: Worker[] = [];
   private workerCount: number;
+  private singleThreadFallback: SingleThreadSplitor | null = null;
 
   constructor(file: File, chunkSize: number = 1024 * 1024 * 5) {
     super(file, chunkSize);
@@ -75,7 +77,7 @@ export class MultiThreadSplitor extends ChunkSplitor {
   calcHash(chunks: Chunk[], emitter: EventEmitter<'chunks'>): void {
     if (this.workers.length === 0) {
       // 降级到单线程模式
-      this.calcHashSingleThread(chunks, emitter);
+      this.getSingleThreadFallback().calcHash(chunks, emitter);
       return;
     }
 
@@ -103,7 +105,7 @@ export class MultiThreadSplitor extends ChunkSplitor {
       worker.onerror = (error) => {
         console.error('Worker 执行错误:', error);
         // 降级处理
-        this.calcHashSingleThread(workerChunks, emitter);
+        this.getSingleThreadFallback().calcHash(workerChunks, emitter);
       };
 
       // 发送数据给Worker
@@ -120,26 +122,13 @@ export class MultiThreadSplitor extends ChunkSplitor {
   }
 
   /**
-   * 单线程hash计算（降级方案）
-   * @param chunks 分片数组
-   * @param emitter 事件发射器
+   * 获取单线程降级处理器（懒初始化）
    */
-  private async calcHashSingleThread(chunks: Chunk[], emitter: EventEmitter<'chunks'>) {
-    const batchSize = 5; // 每批处理5个分片
-    
-    for (let i = 0; i < chunks.length; i += batchSize) {
-      const batch = chunks.slice(i, i + batchSize);
-      const promises = batch.map(async (chunk) => {
-        chunk.hash = await calcChunkHash(chunk);
-        return chunk;
-      });
-      
-      const results = await Promise.all(promises);
-      emitter.emit('chunks', results);
-      
-      // 让出主线程，避免阻塞UI
-      await new Promise(resolve => setTimeout(resolve, 0));
+  private getSingleThreadFallback(): SingleThreadSplitor {
+    if (!this.singleThreadFallback) {
+      this.singleThreadFallback = new SingleThreadSplitor(this.file, this.chunkSize);
     }
+    return this.singleThreadFallback;
   }
 
   /**
@@ -150,5 +139,7 @@ export class MultiThreadSplitor extends ChunkSplitor {
       worker.terminate();
     });
     this.workers = [];
+    this.singleThreadFallback?.dispose();
+    this.singleThreadFallback = null;
   }
 }

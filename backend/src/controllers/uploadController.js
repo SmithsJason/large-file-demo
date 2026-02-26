@@ -6,6 +6,7 @@ const FileUtils = require('../utils/fileUtils');
 
 // 配置multer用于处理文件上传
 const upload = multer({
+  //保存到磁盘前需要先验证分片哈希
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB 单个分片最大限制
